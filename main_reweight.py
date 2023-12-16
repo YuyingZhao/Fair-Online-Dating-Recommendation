@@ -188,8 +188,6 @@ def obtain_train_weight_power(args):
     T = len(ogr_array)*1.0/(denominator)
     group_weight = [T/(l**args.penalty) for l in user_num]
  
-    print("Group weight:", group_weight, "p:", args.penalty)
-
     w = np.array([0.0]*len(ogr_array))
     for i, g in enumerate(groups):
         w[g] = group_weight[i]
@@ -232,7 +230,16 @@ if __name__ == '__main__':
     # assign the weight for optimization
     w = obtain_train_weight_power(args)
     w = torch.tensor(w).to(args.device)
-    print("W shape:", w.shape)
+
+
+    # create dictionaries if not exists (trained_model/dataset/)
+    paths = [args.path+"/trained_model_reweight/", \
+             args.path+"/trained_model_reweight/"+args.dataset, \
+                args.path+"/test_logs_reweight"]
+    for p in paths: 
+        if not os.path.exists(p):
+            os.mkdir(p)
+            print("path has been created: ", p)
 
     best_val = run(w, model, optimizer, train_cf, clicked_set, user_dict, adj, args)
 

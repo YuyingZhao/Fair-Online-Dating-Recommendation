@@ -116,14 +116,6 @@ if __name__ == '__main__':
     
 
     user_embs, item_embs = model.generate()
-
-    print(user_embs.sum().item(), item_embs.sum().item())
-    print(user_dict.keys())
-    for k in user_dict.keys():
-        s = 0
-        for u in user_dict[k].keys():
-            s += sum(user_dict[k][u])
-        print(k, s)
     
     test_results = test(user_embs, item_embs, user_dict, args, flag="test")
     print(test_results)
@@ -142,7 +134,17 @@ if __name__ == '__main__':
     save_list = [str(t) for t in save_list]
     save_str = ' '.join(save_list)+"\n"
     
+    # create dictionaries if not exists (trained_model/dataset/)
+    paths = [args.path+"/test_logs/", \
+             args.path+"/test_logs/"+args.dataset]
+    for p in paths: 
+        if not os.path.exists(p):
+            os.mkdir(p)
+            print("path has been created: ", p)
+
     save_filename = args.path+"/test_logs/"+args.dataset+"/"+args.model+".txt"
     save_file = open(save_filename, "a+")
     save_file.write(save_str)
+
+    test_per_user(user_embs, item_embs, user_dict, args)
     

@@ -56,7 +56,7 @@ def parse_args():
         help="split users based on the opposite gender ratio into #group_num groups")
     parser.add_argument("--penalty", type=float, default=1.0, \
         help="power in the denominator")
-
-    # debugging
+    parser.add_argument("--reweight_flag", type=int, default=0, \
+                        help="whether the tested model is reweighted")
 
     return parser.parse_args()

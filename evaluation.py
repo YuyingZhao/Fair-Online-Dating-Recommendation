@@ -195,9 +195,6 @@ def split_groups_horizontally(filename, group_num=10):
         groups.append([k for k, v in filter (lambda x: x[1] >= start_value and x[1] < end_value, id_to_ratio.items())])
     final_end_value = ratio_range[-1]
     groups[-1].extend([k for k, v in filter (lambda x: x[1] == final_end_value, id_to_ratio.items())])
-    group_size = [len(t) for t in groups]
-    total_node = sum(group_size)
-    print(group_size)
     return groups
 
 # group information is input from a file (as a step during the preprocess)
@@ -454,3 +451,114 @@ def test_fairness(user_embs, item_embs, user_dict, args, flag="val"):
     return fair_measurement(results_whole_groups)
 
 
+def test_per_user(user_embs, item_embs, user_dict, args):
+    train_user_set = user_dict['train_user_set']
+    val_user_set = user_dict['val_user_set']
+    test_user_set = user_dict['test_user_set']
+
+    test_users = torch.tensor(list(test_user_set.keys()))
+
+    recalls_ = []
+    precisions_ = []
+    f1s_ = []
+    ndcgs_ = []
+    hits_ = []
+
+    group_test_user = test_users
+
+    with torch.no_grad():
+        users_list = []
+        ratings_list = []
+        ratings_values_list = []
+        groundTruth_items_list = []
+
+        for batch_users in minibatch(group_test_user, batch_size=args.test_batch_size):
+            batch_users = batch_users.to(args.device)
+            rating_batch = torch.matmul(user_embs[batch_users], item_embs.t())
+
+            clicked_items = []
+            for user in batch_users:
+                clicked_items_for_user_in_train = train_user_set[user.item()] - args.n_users
+                clicked_items_for_user_in_val = val_user_set[user.item()] - args.n_users
+                clicked_items.append(np.concatenate([clicked_items_for_user_in_train, clicked_items_for_user_in_val]))
+
+
+            # clicked_items = [train_user_set[user.item()] - args.n_users
+            #                  for user in batch_users]
+            groundTruth_items = [test_user_set[user.item()] - args.n_users
+                                 for user in batch_users]
+
+            exclude_index = []
+            exclude_items = []
+
+            for range_i, items in enumerate(clicked_items):
+                exclude_index.extend([range_i] * len(items))
+                exclude_items.extend(items)
+
+            rating_batch[exclude_index, exclude_items] = -(1 << 10)
+
+            rating_K = torch.topk(rating_batch, k=max(args.topks))[1].cpu()
+            rating_values = torch.topk(rating_batch, k=max(args.topks))[0].cpu()
+
+            users_list.extend(batch_users)
+            ratings_list.append(rating_K)
+            ratings_values_list.append(rating_values)
+
+            groundTruth_items_list.append(groundTruth_items)
+
+        X = zip(ratings_list, groundTruth_items_list)
+
+        for i, x in enumerate(X):
+            sorted_items = x[0].numpy() #[1024, 100]
+            groundTrue = x[1]
+            r = getLabel(groundTrue, sorted_items)
+
+            # print("shapes:", sorted_items.shape)
+            # print(len(groundTrue)) # [1024]
+            for iter_ in range(len(groundTrue)):
+                pre, recall, ndcg, hit_ratio, F1 = [], [], [], [], []
+                for k in args.topks:
+                    ret = RecallPrecision_ATk([groundTrue[iter_]], r[iter_].reshape(1, -1), k)
+                    ndcgs = NDCGatK_r([groundTrue[iter_]], r[iter_].reshape(1, -1), k)
+                    hit_ratios = Hit_at_k(r[iter_].reshape(1, -1), k)
+
+                    hit_ratio.append(sum(hit_ratios))
+                    pre.append(sum(ret['Precision']))
+                    recall.append(sum(ret['Recall']))
+                    ndcg.append(sum(ndcgs))
+
+                    temp = ret['Precision'] + ret['Recall']
+                    temp[temp == 0] = float('inf')
+                    F1s = 2 * ret['Precision'] * ret['Recall'] / temp
+                    # F1s[np.isnan(F1s)] = 0
+
+                    F1.append(sum(F1s))
+
+                recalls_.append(np.array(recall))
+                precisions_.append(np.array(pre))
+                f1s_.append(np.array(F1))
+                ndcgs_.append(np.array(ndcg))
+                hits_.append(np.array(hit_ratio))
+
+    print("Recall shape:", np.array(recalls_).shape) # User number x 6 (topk)
+    print("User_list shape:", len(users_list))
+
+    users_list = [u.detach().cpu() for u in users_list]
+    ratings_list = torch.cat(ratings_list, dim=0) # (user_num, 100)
+    ratings_values_list = torch.cat(ratings_values_list, dim=0) # (user_num, 100)
+    print(ratings_list.shape)
+
+    if args.reweight_flag == 0:
+        file_prefix = args.path+"/test_logs/"+args.dataset+"/"+args.model+"_"+str(args.seed)+"_"
+    else:
+        file_prefix = args.path+"/test_logs_reweight/"+args.dataset+"/"+args.model+"_"+str(args.seed)+"_"
+
+    np.save(open(file_prefix + "rating_list.npy", "wb"), ratings_list.numpy())
+    np.save(open(file_prefix + "rating_value_list.npy", "wb"), ratings_values_list.numpy())
+    np.save(open(file_prefix + "user_ids.npy", "wb"), np.array(users_list))
+    np.save(open(file_prefix + "Recall.npy", "wb"), np.array(recalls_))
+    np.save(open(file_prefix + "Precision.npy", "wb"), np.array(precisions_))
+    np.save(open(file_prefix + "F1.npy", "wb"), np.array(f1s_))
+    np.save(open(file_prefix + "NDCG.npy", "wb"), np.array(ndcgs_))
+    np.save(open(file_prefix + "Hit_ratio.npy", "wb"), np.array(hits_))
+    print("Finish saving records")

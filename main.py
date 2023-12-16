@@ -188,5 +188,12 @@ if __name__ == '__main__':
     """define optimizer"""
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    # create dictionaries if not exists (trained_model/dataset/)
+    paths = [args.path+"/trained_model/", args.path+"/trained_model/"+args.dataset]
+    for p in paths: 
+        if not os.path.exists(p):
+            os.mkdir(p)
+            print("path has been created: ", p)
+
     run(model, optimizer, train_cf, clicked_set, user_dict, adj, args)
 

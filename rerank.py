@@ -3,6 +3,7 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import torch
 import time
+import os
 
 def load_result(method_name, seed, topk_index, flag='reweight'):
     if flag == "reweight":
@@ -87,7 +88,6 @@ def RecallPrecision_ATk(test_data, r, k):
     k : top-k
     """
     right_pred = r[:, :k].sum(1)
-    # print(right_pred, 2213123213)
     precis_n = k
     recall_n = np.array([len(test_data[i]) for i in range(len(test_data))])
     recall = right_pred / recall_n
@@ -110,13 +110,11 @@ def NDCGatK_r(test_data, r, k):
         test_matrix[i, :length] = 1
     max_r = test_matrix
 
-    # print(max_r[0], pred_data[0])
     idcg = np.sum(max_r * 1. / np.log2(np.arange(2, k + 2)), axis=1)
     dcg = np.sum(pred_data * (1. / np.log2(np.arange(2, k + 2))), axis=1)
 
     idcg[idcg == 0.] = 1.  # it is OK since when idcg == 0, dcg == 0
     ndcg = dcg / idcg
-    # ndcg[np.isnan(ndcg)] = 0.
 
     return ndcg
 
@@ -143,18 +141,15 @@ def minibatch(*tensors, batch_size):
 
 def train_gender_distribution_from_train_edges(file_train_edges, id_to_gender_target_dict):
     train_edges = np.loadtxt(open(file_train_edges, "r")).astype(int)
-#     print(train_edges)
     
     edgelist = defaultdict(list)
     for [u, v] in train_edges:
         edgelist[u].append(v)
-#     print(edgelist)
 
     female_ratio = dict()
     for u in edgelist.keys():
         v_list = edgelist[u]
         v_gender = [id_to_gender_target_dict[t] for t in v_list]
-#         print(v_gender)
         females = [int(t == 'F') for t in v_gender] # opposite gender: 1, same gender: 0
         female_ratio[u] = np.mean(females)
     return female_ratio
@@ -170,9 +165,7 @@ def split_groups_horizontally(filename, group_num=10):
     f = open(filename, "r")
     for line in f.readlines():
         line_split = line.rstrip().split()
-#         print(line_split)
         uid = int(line_split[0])
-#         print(uid)
         ratio = float(line_split[1])
         id_to_ratio[uid] = ratio
 
@@ -181,20 +174,9 @@ def split_groups_horizontally(filename, group_num=10):
     for i, v in enumerate(ratio_range[:-1]):
         start_value = v
         end_value = ratio_range[i+1]
-#         print(start_value, end_value)
         groups.append([k for k, v in filter (lambda x: x[1] >= start_value and x[1] < end_value, id_to_ratio.items())])
     final_end_value = ratio_range[-1]
     groups[-1].extend([k for k, v in filter (lambda x: x[1] == final_end_value, id_to_ratio.items())])
-    group_size = [len(t) for t in groups]
-    total_node = sum(group_size)
-#     print(len(id_to_ratio), total_node)
-    print(group_size)
-#     for i, g in enumerate(groups):
-#         if len(g) == 0:
-#             print(i, "size 0")
-#         else:
-#             ratios = [id_to_ratio[uid] for uid in g]
-#             print(i, min(ratios), max(ratios))
     return groups
     
 def fair_measurement(group_scores):
@@ -436,8 +418,6 @@ class rerank():
                 groundTrue = x[1]
                 r = getLabel(groundTrue, sorted_items)
 
-                # print("shapes:", sorted_items.shape)
-                # print(len(groundTrue)) # [1024]
                 for iter_ in range(len(groundTrue)):
                     pre, recall, ndcg, hit_ratio, F1 = [], [], [], [], []
                     for k in [20]:
